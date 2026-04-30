@@ -47,6 +47,7 @@ std::mutex msg_handler::s_thread_lock;
  */
 static int GenerateKeyShard_Task(void* keyshard_param )
 {
+    //拿到请求参数
     int ret;
     size_t result_len = 0;
     char* result = nullptr;
@@ -60,7 +61,6 @@ static int GenerateKeyShard_Task(void* keyshard_param )
     web::json::value result_json;
 
     FUNC_BEGIN;
-
     if ( !param ) {
         ERROR( "keyshard_param is null in GenerateKeyShard()!" );
         reply_body = msg_handler::GetMessageReply( false, APP_ERROR_INVALID_PARAMETER, "keyshard_param is null in GenerateKeyShard()!" );

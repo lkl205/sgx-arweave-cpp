@@ -9,7 +9,10 @@ using namespace utility;
 using namespace web::http;
 using namespace web::http::client;
 using safeheron::bignum::BN;
-
+#开机启动，等待别人发请求
+#收到post/generate或/query
+#请求丢给msg_handler处理
+#处理完，用webhook发给客户端结果
 /**
  * @brief This is a timer thread, use to release stopped 
  *        threads in msg_handler::s_thread_pool.
@@ -19,14 +22,14 @@ using safeheron::bignum::BN;
  */
 static int timer_thread_func( void* param )
 {
-    int timer_interval = 10; // seconds
+    int timer_interval = 10; // 每10秒跑一次
     listen_svr* svr = (listen_svr*)param;
 
     if ( !svr ) return -1;
 
     do {
         for (int i = 0; i < timer_interval; i++) {
-            // If server is stopping, goto exit!
+            // 每10秒清理一次off的线程
             if ( svr->is_stopping_ ) goto _exit;
             sleep( 1 );
         }
@@ -52,7 +55,7 @@ listen_svr::listen_svr( const std::string & url )
                       std::bind(&listen_svr::HandleMessage, 
                       this, 
                       std::placeholders::_1));
-}
+}//启动一个http服务，等待接收post（生成密钥/查询）和get请求
 
 listen_svr::~listen_svr()
 {
@@ -70,7 +73,7 @@ pplx::task<void> listen_svr::open()
         delete timer_thread_;
         timer_thread_ = nullptr;
     }
-    
+    //启动服务，打开http端口，开始监听客户端请求
     // start the timer thread to check msg_handler::s_thread_pool
     is_stopping_ = false;
     timer_thread_ = new ThreadTask( timer_thread_func, this );
@@ -89,7 +92,7 @@ pplx::task<void> listen_svr::close()
         delete timer_thread_;
         timer_thread_ = nullptr;
     }
-
+//关闭服务
     // clean msg_handler::s_thread_pool
     msg_handler::DestroyThreadPool();
 
@@ -99,8 +102,9 @@ pplx::task<void> listen_svr::close()
 // An HTTP request message is received
 void listen_svr::HandleMessage( const http_request & message )
 {
-    std::string request_id;
-    std::string path = message.request_uri().path();
+//1、拿到请求路径：/generate或/query
+    std::string request_id;//2、生成一个唯一请求ID(方便日志追踪)
+    std::string path = message.request_uri().path();//3、交给msg_handler处理
     auto req_body = message.extract_json().get();
 
     FUNC_BEGIN;
@@ -120,7 +124,7 @@ void listen_svr::HandleMessage( const http_request & message )
     handler.process( request_id, path, req_body.serialize(), resp_body );
     web::json::value resp_json = json::value::parse( resp_body );
     resp_json["request_id"] = json::value( request_id );
-    message.reply( status_codes::OK, resp_json );
+    message.reply( status_codes::OK, resp_json );//把结果返回给客户端
 
     INFO_OUTPUT_CONSOLE( "Request ID: %s is replied!", request_id.c_str() );
 
@@ -143,7 +147,7 @@ std::string listen_svr::CreateRequestID( const std::string & prefix )
     return prefix + ret;
 }
 
-// Callback function. Send a message to callback address using POST method
+// Webhook通知 Callback function. Send a message to callback address using POST method
 pplx::task<void> listen_svr::PostRequest( 
     const std::string & request_id, 
     const std::string & client_url, 
@@ -164,4 +168,4 @@ pplx::task<void> listen_svr::PostRequest(
                 }
             });
     return request;
-}
+}//发送post到客户端的webhook地址
